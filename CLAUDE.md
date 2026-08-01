@@ -10,7 +10,8 @@ The custom **OpenVPN VPN-agent** is complete: it connects an HP TouchPad through
 stock Settings → VPN UI to a real PiVPN server with TLS 1.3 / AES-256-GCM; traffic AND
 DNS go through the tunnel and DNS is restored on disconnect. Packaged as a distributable
 `.ipk` (info app "OpenVPN 2" + agent + postinst/prerm) and shipped to the community.
-- Repo: **github.com/webOSArchive/webos-openvpn-2** (moved from codepoet80/webos-openvpn).
+- Repo: **github.com/webOSArchive/webos-vpn-profiles** (was webos-openvpn-2, and
+  before that codepoet80/webos-openvpn; renamed once it shipped more than one agent).
 - **Read `RESUME.md` (repo root) first** — full status, exact ABI, build/install, next work.
 - The older strongSwan/EasyVPN path is deprecated: `setup-webos-easyvpn-deprecated.sh`
   installs it, `uninstall-webos-easyvpn.sh` removes it (PiVPN-safe).
