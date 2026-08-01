@@ -50,7 +50,7 @@ a mid-session network change it could revert until the next up; fine for a stabl
 session, and a deeper fix would push DNS via the host2 `addNetworkInterface`
 connection-manager path instead.
 
-**Packaging (done):** `packaging/` builds a distributable `.ipk`
+**Packaging (done):** `packaging-openvpn/` builds a distributable `.ipk`
 (`org.webosarchive.openvpn_1.0.0_all.ipk`) — a small info app (icon +
 setup instructions in `index.html`) bundling the agent payload, with
 `postinst`/`prerm` (repacked into control.tar.gz by `build-ipk.sh`) that install
@@ -59,7 +59,7 @@ Icons resized from `openvpn-480.png` (64/48/256 for the app, 32 for the VPN
 list). **Must install via Preware / WebOS Quick Install** (they run postinst as
 root); `palm-install` won't. Full lifecycle validated on device: postinst
 installs + registers (with `vpnAgentIcon`) + tunnel works; prerm removes cleanly.
-Build: `cd packaging && ./build-ipk.sh` → `packaging/dist/`.
+Build: `cd packaging-openvpn && ./build-ipk.sh` → `ipks/`.
 
 Remaining (all optional polish): the addNetworkInterface route/DNS integration
 (cleaner than the resolv.conf rewrite, but current approach works); hosting the

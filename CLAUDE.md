@@ -262,7 +262,7 @@ box with the GCC toolchain.
   `sysroot/` has device libcjson/libglib + shim headers `json.h`/`glib_shim.h`).
 - **Deploy for dev:** `novacom put file:///usr/lib/vpn/agents/openvpn/libVpnOpenvpnAgent.so
   < libVpnOpenvpnAgent.so`; then `killall PmVpnDaemon` so it re-dlopens the new `.so`.
-- **Build the `.ipk`:** `cd packaging && ./build-ipk.sh` → `packaging/dist/` (syncs the
+- **Build the `.ipk`:** `cd packaging-openvpn && ./build-ipk.sh` → `ipks/` (syncs the
   agent payload from `agent-openvpn/`, injects postinst/prerm). Install via **Preware /
   WebOS Quick Install** (NOT palm-install — postinst needs root).
 - **Dev gotchas:** after `killall PmVpnDaemon`, the daemon persists connection state, so

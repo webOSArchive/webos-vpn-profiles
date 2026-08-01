@@ -110,11 +110,11 @@ hand-off — it's all in [`agent-openvpn/BUILD.md`](agent-openvpn/BUILD.md).
 | Path | What |
 |---|---|
 | [`agent-openvpn/`](agent-openvpn/) | The agent plugin: C source, the reverse-engineered ABI header, Makefile (Linaro cross-compile), the `openvpn-up` route/DNS script, and a novacom install script. See [`BUILD.md`](agent-openvpn/BUILD.md). |
-| [`packaging/`](packaging/) | Builds the distributable `.ipk` (`build-ipk.sh`) — a small info app that bundles the agent + `postinst`/`prerm` that install it as root. |
+| [`packaging-openvpn/`](packaging-openvpn/) | Builds the distributable `.ipk` (`build-ipk.sh`) — a small info app that bundles the agent + `postinst`/`prerm` that install it as root. |
 | [`PIVPN-GUIDE.md`](PIVPN-GUIDE.md) | End-to-end guide: PiVPN server + TouchPad client + troubleshooting. |
 | [`agent-openvpn/BUILD.md`](agent-openvpn/BUILD.md) | Build + architecture + the full recovered agent ABI. |
 | [`agent-tailscale/`](agent-tailscale/) | A **second agent**, same plugin model, driving Tailscale (WireGuard). See [`TAILSCALE-GUIDE.md`](TAILSCALE-GUIDE.md). |
-| [`packaging-tailscale/`](packaging-tailscale/) | Builds the Tailscale `.ipk`, same shape as `packaging/`. |
+| [`packaging-tailscale/`](packaging-tailscale/) | Builds the Tailscale `.ipk`, same shape as `packaging-openvpn/`. |
 | [`ipks/`](ipks/) | The latest built `.ipk` for each agent, kept in git so you can install without building. |
 | `com.palm.app.vpn/` | The stock webOS VPN front-end (pulled off the device) — the rendering contract the agent targets. |
 | `reversing/` | The stock `libVpncAgent.so` / `PmVpnDaemon` + disassembly used to recover the ABI. |
@@ -129,7 +129,7 @@ hand-off — it's all in [`agent-openvpn/BUILD.md`](agent-openvpn/BUILD.md).
 cd agent-openvpn && make
 
 # 2. build the .ipk (needs the HP webOS SDK for palm-package)
-cd ../packaging && ./build-ipk.sh      # → packaging/dist/*.ipk
+cd ../packaging-openvpn && ./build-ipk.sh   # → ipks/*.ipk
 ```
 
 Building `openvpn` itself for the device is a one-time step documented in `BUILD.md §8`

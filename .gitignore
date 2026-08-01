@@ -8,10 +8,10 @@ agent-openvpn/sysroot/usr/lib/
 
 # Agent payload synced into the package by build-ipk.sh (regenerable from
 # agent-openvpn/). The icon under agent/icons/ IS tracked.
-packaging/org.webosarchive.openvpn/agent/libVpnOpenvpnAgent.so
-packaging/org.webosarchive.openvpn/agent/openvpn
-packaging/org.webosarchive.openvpn/agent/openvpn-up
-packaging/org.webosarchive.openvpn/agent/vpn-plugin-info.json
+packaging-openvpn/org.webosarchive.openvpn/agent/libVpnOpenvpnAgent.so
+packaging-openvpn/org.webosarchive.openvpn/agent/openvpn
+packaging-openvpn/org.webosarchive.openvpn/agent/openvpn-up
+packaging-openvpn/org.webosarchive.openvpn/agent/vpn-plugin-info.json
 
 # macOS cruft
 .DS_Store

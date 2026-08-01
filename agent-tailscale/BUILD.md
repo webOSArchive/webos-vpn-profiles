@@ -95,7 +95,7 @@ itself for a real `.ipk` install).
 ## 4. Package
 
 ```sh
-./packaging-tailscale/build-ipk.sh     # -> packaging-tailscale/dist/*.ipk  (~8.8 MB)
+./packaging-tailscale/build-ipk.sh     # -> ipks/*.ipk  (~9 MB)
 ```
 
 Install with **Preware or WebOS Quick Install**, never `palm-install` — postinst

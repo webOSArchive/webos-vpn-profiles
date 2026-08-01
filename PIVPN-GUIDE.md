@@ -126,7 +126,7 @@ the VPN daemon.
 Prereq: the **OpenSSL-legacyWebOS** package (`/usr/lib/ssl11`) must be installed
 first — the bundled `openvpn` links its `libssl.so.1.1` / `libcrypto.so.1.1`.
 
-(Building the `.ipk` yourself: `cd packaging && ./build-ipk.sh` → `packaging/dist/`.)
+(Building the `.ipk` yourself: `cd packaging-openvpn && ./build-ipk.sh` → `ipks/`.)
 
 ### Option B: novacom install script (for development)
 
