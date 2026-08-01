@@ -6,19 +6,26 @@
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
-    /* Scrolling model, learned the hard way on webOS 3.0.5:
-       - NO height:100% on html/body -- that clips the page and kills scrolling.
-         The document itself must be the scroller.
-       - overflow-x MUST be contained. A single long unbreakable token (a file
-         path, a URL) widens the layout past the screen; the card then shows a
-         cut-off page and vertical drag-scrolling stops working. Hence the
-         word-break rules below -- they are load-bearing, not cosmetic. */
-    html, body { margin: 0; padding: 0; overflow-x: hidden; }
+    /* Scrolling on webOS 3.0.5, established by testing on-device:
+       the document does NOT scroll by touch in a plain HTML app card, no matter
+       what overflow you set on html/body. Content taller than the card is simply
+       unreachable. (Frameworks like Enyo ship their own Scroller for this very
+       reason.) So we make an explicit scroll container and drive it from JS --
+       setting scrollTop programmatically DOES work even though touch-drag isn't
+       wired up. See the drag handler at the bottom of the file.
+
+       overflow-x must also stay contained: one long unbreakable token (a file
+       path, a URL) widens the layout past the screen and the card shows a
+       cut-off page. The word-break rules below are load-bearing, not cosmetic. */
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body {
       font-family: Prelude, Helvetica, Arial, sans-serif;
       background: #1b1f24; color: #e6e9ee;
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
       word-wrap: break-word; word-break: break-word;
+    }
+    #scroll {
+      height: 100%; overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
     }
     .wrap { max-width: 620px; margin: 0 auto; padding: 12px 18px 24px; }
 
@@ -52,6 +59,7 @@
   </style>
 </head>
 <body>
+  <div id="scroll">
   <div class="wrap">
     <div class="head">
       <img src="splashicon.png" alt="Tailscale"><h1>Tailscale for webOS</h1>
@@ -69,7 +77,7 @@
           Leave it non&#8209;ephemeral; <b>reusable</b> is handy.</li>
         <li>Get the key to your TouchPad. You can do any of the following:
           <ul class="plain">
-            <li>Save it to <span class="path">/media/internal/tailscale&#8209;authkey.txt</span>
+            <li>Save it to <span class="path">/media/internal/tailscale-authkey.txt</span>
               and leave <b>Auth key</b> empty in step 2</li>
             <li>E&#8209;mail it to the TouchPad and paste it in</li>
             <li>Type it in precisely</li>
@@ -87,7 +95,8 @@
         <li><span class="k">Next</span> &rarr; enter the <b>Auth key</b> (or leave
           blank if you saved the file), then <span class="k">Save &amp; Connect</span>.</li>
       </ol>
-      <p class="note"><b>Headscale?</b> Put its URL in the <b>Login server</b> field.</p>
+      <p class="note">You can delete the tailscale-authkey.txt once you successfully connect.</p>
+      <p class="note"><b>Using Headscale?</b> Put its URL in the <b>Login server</b> field.</p>
     </div>
 
     <div class="card">
@@ -104,13 +113,72 @@
 
     <div class="foot">docs.webosarchive.org &middot; &copy; 2026 webOS Archive</div>
   </div>
+  </div>
 
   <!--
     Plain HTML app: signal the window manager the card is ready, or webOS shows
     the splash and pulses forever. Frameworks call PalmSystem.stageReady()
     internally (see the device's enyo/0.10 system.js); a bare page must too.
   -->
+  <!--
+    Touch-drag scroller. webOS 3.0.5's WebView does not scroll a plain HTML page
+    (or an overflow container) by touch, so we do it by hand: track the finger
+    and set scrollTop ourselves, which the engine honours. ES5 + old-style
+    addEventListener only -- this is a 2009 WebKit.
+  -->
   <script type="text/javascript">
+    (function () {
+      var el = document.getElementById("scroll");
+      if (!el) return;
+      var startY = 0, startTop = 0, lastY = 0, lastT = 0, vel = 0;
+      var dragging = false, glide = null;
+
+      function ypos(e) {
+        return (e.touches && e.touches.length) ? e.touches[0].clientY : e.clientY;
+      }
+      function stopGlide() { if (glide) { clearInterval(glide); glide = null; } }
+
+      function down(e) {
+        stopGlide();
+        dragging = true;
+        startY = lastY = ypos(e);
+        startTop = el.scrollTop;
+        lastT = new Date().getTime();
+        vel = 0;
+      }
+      function move(e) {
+        if (!dragging) return;
+        var y = ypos(e);
+        el.scrollTop = startTop - (y - startY);
+        var now = new Date().getTime(), dt = now - lastT;
+        if (dt > 0) { vel = (y - lastY) / dt; lastY = y; lastT = now; }
+        /* Stop the card itself from treating this as a gesture. */
+        if (e.preventDefault) e.preventDefault();
+      }
+      function up() {
+        if (!dragging) return;
+        dragging = false;
+        /* Light inertia so it feels like the rest of the OS. */
+        var v = vel * 14;
+        if (Math.abs(v) < 1) return;
+        glide = setInterval(function () {
+          el.scrollTop -= v;
+          v *= 0.93;
+          if (Math.abs(v) < 0.4) stopGlide();
+        }, 16);
+      }
+
+      el.addEventListener("touchstart", down, false);
+      el.addEventListener("touchmove", move, false);
+      el.addEventListener("touchend", up, false);
+      el.addEventListener("touchcancel", up, false);
+      /* Mouse equivalents so the page is testable in a desktop browser too. */
+      el.addEventListener("mousedown", down, false);
+      el.addEventListener("mousemove", move, false);
+      el.addEventListener("mouseup", up, false);
+      el.addEventListener("mouseleave", up, false);
+    })();
+
     (function () {
       var done = false;
       function stageReady() {
