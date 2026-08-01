@@ -5,12 +5,22 @@
   <title>OpenVPN</title>
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-    /* No height:100% here -- that clips the page and kills scrolling on webOS. */
-    html, body { margin: 0; padding: 0; }
+    /* webOS 3.0.5 does NOT scroll a plain HTML app card by touch, whatever
+       overflow is set on html/body -- anything taller than the card is simply
+       unreachable. (Enyo ships its own Scroller for exactly this reason.) This
+       page currently fits, but only just, so it gets the same explicit scroll
+       container as the Tailscale app: setting scrollTop programmatically DOES
+       work, so a small drag handler at the bottom of the file drives it. Adding
+       a few more lines of instructions here would otherwise silently clip. */
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body {
       font-family: Prelude, Helvetica, Arial, sans-serif;
       background: #1b1f24; color: #e6e9ee;
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      word-wrap: break-word; word-break: break-word;
+    }
+    #scroll {
+      height: 100%; overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
     }
     .wrap { max-width: 680px; margin: 0 auto; padding: 22px 20px 40px; }
     .head { text-align: center; padding: 4px 0 2px; }
@@ -32,6 +42,7 @@
   </style>
 </head>
 <body>
+  <div id="scroll">
   <div class="wrap">
     <div class="head">
       <img src="splashicon.png" alt="OpenVPN">
@@ -71,6 +82,64 @@
       Copyright 2026, webOS Archive
     </div>
   </div>
+  </div>
+
+  <!--
+    Touch-drag scroller. webOS 3.0.5's WebView does not scroll a plain HTML page
+    (or an overflow container) by touch, so we do it by hand: track the finger
+    and set scrollTop ourselves, which the engine honours. ES5 + old-style
+    addEventListener only -- this is a 2009 WebKit.
+  -->
+  <script type="text/javascript">
+    (function () {
+      var el = document.getElementById("scroll");
+      if (!el) return;
+      var startY = 0, startTop = 0, lastY = 0, lastT = 0, vel = 0;
+      var dragging = false, glide = null;
+
+      function ypos(e) {
+        return (e.touches && e.touches.length) ? e.touches[0].clientY : e.clientY;
+      }
+      function stopGlide() { if (glide) { clearInterval(glide); glide = null; } }
+
+      function down(e) {
+        stopGlide();
+        dragging = true;
+        startY = lastY = ypos(e);
+        startTop = el.scrollTop;
+        lastT = new Date().getTime();
+        vel = 0;
+      }
+      function move(e) {
+        if (!dragging) return;
+        var y = ypos(e);
+        el.scrollTop = startTop - (y - startY);
+        var now = new Date().getTime(), dt = now - lastT;
+        if (dt > 0) { vel = (y - lastY) / dt; lastY = y; lastT = now; }
+        if (e.preventDefault) e.preventDefault();
+      }
+      function up() {
+        if (!dragging) return;
+        dragging = false;
+        var v = vel * 14;
+        if (Math.abs(v) < 1) return;
+        glide = setInterval(function () {
+          el.scrollTop -= v;
+          v *= 0.93;
+          if (Math.abs(v) < 0.4) stopGlide();
+        }, 16);
+      }
+
+      el.addEventListener("touchstart", down, false);
+      el.addEventListener("touchmove", move, false);
+      el.addEventListener("touchend", up, false);
+      el.addEventListener("touchcancel", up, false);
+      el.addEventListener("mousedown", down, false);
+      el.addEventListener("mousemove", move, false);
+      el.addEventListener("mouseup", up, false);
+      el.addEventListener("mouseleave", up, false);
+    })();
+  </script>
 
   <!--
     Plain HTML app: signal the window manager the card is ready, or webOS shows
