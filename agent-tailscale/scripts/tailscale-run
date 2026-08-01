@@ -1,0 +1,247 @@
+#!/bin/sh
+# tailscale-run  -  single foreground child that owns a Tailscale session.
+#
+# The webOS VPN agent (libVpnTailscaleAgent.so) spawns exactly ONE child and
+# watches its stdout, mirroring how the OpenVPN agent drives `openvpn`. Tailscale
+# needs two moving parts (the tailscaled daemon plus a `tailscale up` call), so
+# this script does that sequencing and stays in the foreground for the whole
+# session. Killing it (SIGTERM) tears the tunnel down cleanly.
+#
+# Usage:  tailscale-run <conf-file>
+# The conf file is sourced and defines (all optional except TS_AUTHKEY on a
+# first-ever login):
+#   TS_AUTHKEY TS_LOGIN_SERVER TS_EXIT_NODE TS_HOSTNAME
+#   TS_ACCEPT_ROUTES TS_ACCEPT_DNS   (1/0)
+#
+# Lines beginning "TSAGENT-STATE:" / "TSAGENT-ERROR:" are the contract with the
+# agent's stdout parser. tailscaled's own log is also passed through, so the
+# agent additionally sees "Switching ipn state ... -> Running".
+
+CONF="$1"
+STATE_DIR=/tmp/webos-tailscale
+LOG=/var/log/webos-tailscale-agent.log
+
+# The 23 MB Go binary lives in the app dir on /media/cryptofs -- the root fs has
+# only ~120 MB free. Fall back to the agent dir if someone installed it there.
+APP_AGENT=/media/cryptofs/apps/usr/palm/applications/org.webosarchive.tailscale/agent
+AGENT_DIR=/usr/lib/vpn/agents/tailscale
+for d in "$APP_AGENT" "$AGENT_DIR"; do
+    [ -x "$d/tailscaled" ] && TS_DIR="$d" && break
+done
+TS_DIR="${TS_DIR:-$APP_AGENT}"
+TAILSCALED="$TS_DIR/tailscaled"
+
+# tailscaled is a COMBINED binary: invoked as "tailscale" (argv[0]) it is the
+# CLI. cryptofs is fuse and refuses symlinks ("Operation not permitted"), but the
+# root fs is ext3, so the installer puts the CLI symlink in AGENT_DIR pointing at
+# the big binary -- one 23 MB copy, zero extra bytes on /.
+if [ -e "$AGENT_DIR/tailscale" ]; then
+    TAILSCALE="$AGENT_DIR/tailscale"
+else
+    TAILSCALE="$TS_DIR/tailscale"          # a real second copy, if present
+fi
+
+TS_STATE_DIR="$TS_DIR/state"
+SOCK=/tmp/tailscaled.sock
+
+DNSMASQ_RESOLV=/tmp/resolv.conf            # dnsmasq upstream (resolv-file)
+CLIENT_RESOLV=/tmp/resolv.conf.default     # what /etc/resolv.conf points at
+DNS_BACKUP="$STATE_DIR/resolv.conf.saved"
+CLIENT_BACKUP="$STATE_DIR/resolv.conf.default.saved"
+MAGIC_DNS_IP=100.100.100.100
+
+mkdir -p "$STATE_DIR" "$TS_STATE_DIR" 2>/dev/null
+
+# The log can carry connection details; keep it owner-only rather than the
+# default world-readable 0644.
+touch "$LOG" 2>/dev/null && chmod 600 "$LOG" 2>/dev/null
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [tailscale-run] $*" >>"$LOG" 2>/dev/null; }
+say() { echo "$*"; log "$*"; }          # goes to the agent's pipe AND the log
+
+[ -f "$CONF" ] && . "$CONF"
+
+# ---------------------------------------------------------------- rp_filter --
+# CRITICAL: webOS ships rp_filter=1 (strict) on every interface. In exit-node
+# mode table 52 holds `default dev tailscale0`, so the RETURN path for
+# tailscaled's own underlay traffic (DERP/STUN/control) arrives on eth0 while the
+# unmarked reverse lookup resolves via tailscale0 -> the kernel drops it as a
+# martian. Symptoms are "UDP is blocked", DERP i/o timeouts, and even the exit
+# node peer becoming unpingable. Loose mode (2) fixes it; it exists since 2.6.31.
+set_rp_filter() {
+    for i in all default eth0 tailscale0; do
+        f=/proc/sys/net/ipv4/conf/$i/rp_filter
+        [ -w "$f" ] && echo 2 > "$f" 2>/dev/null
+    done
+}
+restore_rp_filter() {
+    for i in all default eth0; do
+        f=/proc/sys/net/ipv4/conf/$i/rp_filter
+        [ -w "$f" ] && echo 1 > "$f" 2>/dev/null
+    done
+}
+
+# --------------------------------------------------------------------- DNS ---
+# webOS apps resolve via a local dnsmasq (127.0.0.1). dnsmasq forwards to the
+# upstreams in /tmp/resolv.conf. Tailscale's own directManager wants to rewrite
+# /etc/resolv.conf, but that is a symlink webOS owns and regenerates, so it never
+# sticks. Instead we repoint dnsmasq's upstream at Tailscale's resolver
+# (100.100.100.100), which serves MagicDNS names and forwards everything else to
+# the tailnet's configured DNS -- i.e. your private DNS reached OVER the tunnel.
+# That is the bit that fails on hotel Wi-Fi with a plain split tunnel.
+reload_dnsmasq() {
+    killall -HUP dnsmasq 2>/dev/null && log "SIGHUP dnsmasq"
+}
+
+dns_up() {
+    [ ! -f "$DNS_BACKUP" ] && [ -f "$DNSMASQ_RESOLV" ] && cp "$DNSMASQ_RESOLV" "$DNS_BACKUP"
+    {
+        echo "# webOS Tailscale agent: upstream DNS via Tailscale resolver"
+        echo "nameserver $MAGIC_DNS_IP"
+    } >"$DNSMASQ_RESOLV"
+
+    # Add the tailnet MagicDNS suffix to the client-side search list so bare peer
+    # names ("homeserver") resolve, not just FQDNs.
+    suffix=$("$TAILSCALE" --socket="$SOCK" status --json 2>/dev/null \
+             | grep -m1 '"MagicDNSSuffix"' \
+             | sed 's/.*"MagicDNSSuffix"[^"]*"\([^"]*\)".*/\1/')
+    if [ -n "$suffix" ] && [ -f "$CLIENT_RESOLV" ]; then
+        [ ! -f "$CLIENT_BACKUP" ] && cp "$CLIENT_RESOLV" "$CLIENT_BACKUP"
+        old=$(grep '^search ' "$CLIENT_RESOLV" 2>/dev/null | head -1 | cut -d' ' -f2-)
+        {
+            case " $old " in
+                *" $suffix "*) echo "search $old" ;;
+                *) [ -n "$old" ] && echo "search $suffix $old" || echo "search $suffix" ;;
+            esac
+            grep -v '^search ' "$CLIENT_RESOLV" 2>/dev/null
+        } >"$CLIENT_RESOLV.new" && mv "$CLIENT_RESOLV.new" "$CLIENT_RESOLV"
+        log "search domain += $suffix"
+    fi
+    log "DNS upstream -> $MAGIC_DNS_IP"
+    reload_dnsmasq
+}
+
+dns_down() {
+    if [ -f "$DNS_BACKUP" ]; then
+        cp "$DNS_BACKUP" "$DNSMASQ_RESOLV"; rm -f "$DNS_BACKUP"
+        log "DNS upstream restored"
+    fi
+    if [ -f "$CLIENT_BACKUP" ]; then
+        cp "$CLIENT_BACKUP" "$CLIENT_RESOLV"; rm -f "$CLIENT_BACKUP"
+        log "search domain restored"
+    fi
+    reload_dnsmasq
+}
+
+# ----------------------------------------------------------------- teardown --
+cleaned=0
+cleanup() {
+    [ "$cleaned" = "1" ] && return
+    cleaned=1
+    say "TSAGENT-STATE: disconnecting"
+    dns_down
+    "$TAILSCALE" --socket="$SOCK" down >/dev/null 2>&1
+    [ -n "$TSD_PID" ] && kill "$TSD_PID" 2>/dev/null
+    # Wait briefly for a graceful exit, then force.
+    i=0
+    while [ $i -lt 20 ] && kill -0 "$TSD_PID" 2>/dev/null; do
+        i=$((i + 1)); usleep 100000 2>/dev/null || sleep 1
+    done
+    kill -9 "$TSD_PID" 2>/dev/null
+    # SIGTERM alone does NOT remove the ip rules / iptables chains (verified on
+    # device -- rules 5210..5270 survived a killall), so run the explicit cleanup.
+    "$TAILSCALED" --cleanup >/dev/null 2>&1
+    # ...and --cleanup itself is NOT reliable here: on this kernel its nftables
+    # probe fails ("list tables: netlink receive: invalid argument") and, if the
+    # daemon was SIGKILLed, it drops the iptables chains but leaves the policy
+    # routing rules behind. Stale `lookup 52` + `default dev tailscale0` would
+    # blackhole ALL traffic after disconnect, so remove them by hand.
+    for pref in 5210 5230 5250 5270; do
+        while ip rule del pref "$pref" 2>/dev/null; do :; done
+    done
+    ip route flush table 52 2>/dev/null
+    restore_rp_filter
+    rm -f "$SOCK"
+    say "TSAGENT-STATE: disconnected"
+    exit 0
+}
+trap cleanup TERM INT HUP
+
+# ------------------------------------------------------------------- launch --
+if [ ! -x "$TAILSCALED" ]; then
+    say "TSAGENT-ERROR: tailscaled not found at $TAILSCALED"
+    exit 1
+fi
+[ -e /dev/net/tun ] || { say "TSAGENT-ERROR: /dev/net/tun missing"; exit 1; }
+
+set_rp_filter
+say "TSAGENT-STATE: connecting"
+log "starting $TAILSCALED (state=$TS_STATE_DIR)"
+
+rm -f "$SOCK"
+"$TAILSCALED" --state="$TS_STATE_DIR/tailscaled.state" \
+              --socket="$SOCK" --tun=tailscale0 --port=41641 2>&1 &
+TSD_PID=$!
+
+# Wait for the daemon's control socket (it binds within a couple of seconds).
+i=0
+while [ $i -lt 60 ] && [ ! -S "$SOCK" ]; do
+    i=$((i + 1)); sleep 1
+    kill -0 "$TSD_PID" 2>/dev/null || { say "TSAGENT-ERROR: tailscaled exited during startup"; exit 1; }
+done
+[ -S "$SOCK" ] || { say "TSAGENT-ERROR: tailscaled socket never appeared"; cleanup; }
+
+# ----------------------------------------------------------------- bring up --
+# --timeout is essential: without an auth key (or when the tailnet requires
+# manual device approval) `tailscale up` BLOCKS forever waiting for an
+# interactive login that can never happen on this device, and the command
+# substitution below would never return -- the runner would hang holding a
+# half-configured tunnel. Verified on device.
+set -- up --reset --timeout=45s --hostname="${TS_HOSTNAME:-$(hostname 2>/dev/null || echo webos-touchpad)}"
+[ -n "$TS_AUTHKEY" ]      && set -- "$@" --auth-key="$TS_AUTHKEY"
+[ -n "$TS_LOGIN_SERVER" ] && set -- "$@" --login-server="$TS_LOGIN_SERVER"
+[ -n "$TS_EXIT_NODE" ]    && set -- "$@" --exit-node="$TS_EXIT_NODE" --exit-node-allow-lan-access
+if [ "$TS_ACCEPT_ROUTES" = "1" ]; then set -- "$@" --accept-routes=true
+else                                   set -- "$@" --accept-routes=false; fi
+# We always tell tailscaled to compute DNS config (so its 100.100.100.100
+# resolver knows the tailnet's upstreams); applying it to the OS is our job.
+if [ "$TS_ACCEPT_DNS" = "1" ]; then set -- "$@" --accept-dns=true
+else                                set -- "$@" --accept-dns=false; fi
+
+# NB: redact for real -- "$*" contains the auth key, and this log is readable by
+# anything on the device. (An earlier version printed "(authkey redacted)" while
+# logging the key verbatim.)
+log "tailscale $(printf '%s' "$*" | sed -e 's/--auth-key=[^ ]*/--auth-key=REDACTED/g' -e 's/--authkey=[^ ]*/--authkey=REDACTED/g')"
+UPOUT=$("$TAILSCALE" --socket="$SOCK" "$@" 2>&1)
+UPRC=$?
+[ -n "$UPOUT" ] && log "up: $UPOUT"
+# Check for an interactive login URL FIRST: when the key is missing/expired/
+# already-used, `up` both prints the URL and exits non-zero (timeout), and the
+# generic handler below would otherwise report the useless first line
+# ("To authenticate, visit:") as the error text.
+case "$UPOUT" in
+    *"To authenticate, visit"*|*"login.tailscale.com/a/"*|*"/a/"*)
+        say "TSAGENT-ERROR: Auth key missing, expired, or already used. Generate a new one in the Tailscale admin console (Settings -> Keys)."
+        cleanup
+        ;;
+esac
+
+if [ $UPRC -ne 0 ]; then
+    # Surface the first meaningful line to the agent (it becomes the UI error).
+    msg=$(echo "$UPOUT" | grep -v '^$' | grep -viE '^to authenticate' | head -1)
+    say "TSAGENT-ERROR: ${msg:-tailscale up failed or timed out}"
+    cleanup
+fi
+
+set_rp_filter                      # tailscale0 exists now
+[ "$TS_ACCEPT_DNS" = "1" ] && dns_up
+
+TSIP=$("$TAILSCALE" --socket="$SOCK" ip -4 2>/dev/null | head -1)
+log "tailnet ip = ${TSIP:-unknown}"
+say "TSAGENT-STATE: connected"
+
+# Stay in the foreground for the life of the session. `wait` returns when
+# tailscaled dies or when our TERM trap fires.
+wait "$TSD_PID"
+log "tailscaled exited (rc=$?)"
+cleanup

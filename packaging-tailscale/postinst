@@ -1,0 +1,47 @@
+#!/bin/sh
+#
+# postinst - runs as ROOT via Preware / WebOS Quick Install (ipkg).
+# Installs the Tailscale VPN-agent into the system VPN agents directory so the
+# stock Settings -> VPN app can drive it.
+#
+# NOTE: palm-install does NOT run this (non-root). Use Preware or WebOS Quick
+# Install. If you side-load with palm-install, run these copies by hand.
+#
+set -e
+
+APP_DIR="/media/cryptofs/apps/usr/palm/applications/org.webosarchive.tailscale"
+SRC="$APP_DIR/agent"
+DEST="/usr/lib/vpn/agents/tailscale"
+
+echo "Tailscale agent: installing to $DEST ..."
+
+# The root filesystem is normally mounted read-only on webOS.
+mount -o remount,rw / 2>/dev/null || true
+
+mkdir -p "$DEST/icons" "$SRC/state"
+
+# Small files go on / ...
+cp "$SRC/libVpnTailscaleAgent.so" "$DEST/"
+cp "$SRC/tailscale-run"           "$DEST/"
+cp "$SRC/vpn-plugin-info.json"    "$DEST/"
+cp "$SRC/icons/tailscale-small.png" "$DEST/icons/" 2>/dev/null || true
+chmod 755 "$DEST/libVpnTailscaleAgent.so" "$DEST/tailscale-run"
+chmod 644 "$DEST/vpn-plugin-info.json"
+
+# ...but the 23 MB tailscaled stays in the app dir on /media/cryptofs: the root
+# filesystem only has ~120 MB free. tailscaled is a COMBINED binary -- invoked as
+# "tailscale" (argv[0]) it is the CLI -- so a symlink gives us the CLI for free.
+# cryptofs is fuse and refuses symlinks, but / is ext3, so the link lives here.
+chmod 755 "$SRC/tailscaled" 2>/dev/null || true
+ln -sf "$SRC/tailscaled" "$DEST/tailscale"
+
+# Dependency sanity checks (warnings only -- don't fail the install).
+[ -e /dev/net/tun ] || echo "  WARNING: /dev/net/tun missing (reboot usually restores it)."
+[ -x "$SRC/tailscaled" ] || echo "  WARNING: $SRC/tailscaled missing or not executable."
+
+# Restart the VPN daemon so it re-scans and picks up the new agent.
+/usr/bin/killall PmVpnDaemon 2>/dev/null || true
+
+echo "Tailscale agent: installed."
+echo "Configure it in Settings -> VPN -> Add Profile -> Tailscale."
+exit 0

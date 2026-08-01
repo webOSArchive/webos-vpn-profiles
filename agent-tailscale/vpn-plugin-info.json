@@ -1,0 +1,9 @@
+{
+  "title": "Tailscale",
+  "id": "org.webosarchive.tailscale",
+  "version": "1.0.0",
+  "vendor": "webOS Archive community",
+  "type": ["ssl"],
+  "plugin": "libVpnTailscaleAgent.so",
+  "icon": "icons/tailscale-small.png"
+}

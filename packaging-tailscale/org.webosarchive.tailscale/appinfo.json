@@ -1,0 +1,13 @@
+{
+  "id": "org.webosarchive.tailscale",
+  "version": "1.78.1",
+  "vendor": "webOS Archive",
+  "type": "web",
+  "main": "index.html",
+  "title": "Tailscale",
+  "icon": "icon.png",
+  "miniicon": "miniicon.png",
+  "splashicon": "splashicon.png",
+  "uiRevision": 2,
+  "noWindow": false
+}

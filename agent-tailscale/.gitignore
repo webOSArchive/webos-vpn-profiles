@@ -1,0 +1,4 @@
+# The 23 MB Go binaries live here after a build (see BUILD.md); too large for git.
+# The agent .so itself IS tracked, matching agent-openvpn/.
+tailscaled
+tailscale

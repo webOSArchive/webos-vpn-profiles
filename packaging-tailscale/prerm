@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# prerm - runs as ROOT before the package is removed. Tears down the agent.
+#
+DEST="/usr/lib/vpn/agents/tailscale"
+APP_DIR="/media/cryptofs/apps/usr/palm/applications/org.webosarchive.tailscale"
+
+echo "Tailscale agent: removing ..."
+
+mount -o remount,rw / 2>/dev/null || true
+
+# Stop any running session first, so we don't leave the network half-configured.
+/usr/bin/killall tailscale-run 2>/dev/null || true
+/usr/bin/killall tailscaled    2>/dev/null || true
+sleep 1
+/usr/bin/killall -9 tailscaled 2>/dev/null || true
+
+# Remove Tailscale's policy-routing rules by hand. `tailscaled --cleanup` is NOT
+# reliable on this kernel (its nftables probe fails, and after a SIGKILL it can
+# leave the ip rules in place). A stale `lookup 52` with `default dev tailscale0`
+# would blackhole ALL traffic on a device that no longer has the agent.
+[ -x "$APP_DIR/agent/tailscaled" ] && "$APP_DIR/agent/tailscaled" --cleanup >/dev/null 2>&1
+for pref in 5210 5230 5250 5270; do
+    while ip rule del pref "$pref" 2>/dev/null; do :; done
+done
+ip route flush table 52 2>/dev/null || true
+
+# Restore strict reverse-path filtering (the agent relaxes it to loose mode).
+for i in all default eth0; do
+    [ -w /proc/sys/net/ipv4/conf/$i/rp_filter ] && echo 1 > /proc/sys/net/ipv4/conf/$i/rp_filter
+done
+
+# Restore DNS if a session was interrupted before its own teardown ran.
+if [ -f /tmp/webos-tailscale/resolv.conf.saved ]; then
+    cp /tmp/webos-tailscale/resolv.conf.saved /tmp/resolv.conf 2>/dev/null
+fi
+if [ -f /tmp/webos-tailscale/resolv.conf.default.saved ]; then
+    cp /tmp/webos-tailscale/resolv.conf.default.saved /tmp/resolv.conf.default 2>/dev/null
+fi
+/usr/bin/killall -HUP dnsmasq 2>/dev/null || true
+
+/usr/bin/killall PmVpnDaemon 2>/dev/null || true
+
+rm -rf "$DEST"
+rm -rf /tmp/webos-tailscale       # transient state only
+
+# NOTE: the node's Tailscale identity lives in $APP_DIR/agent/state and goes away
+# with the app directory. Remember to also delete the machine in the Tailscale
+# admin console.
+echo "Tailscale agent: removed."
+exit 0

@@ -15,6 +15,36 @@ DNS go through the tunnel and DNS is restored on disconnect. Packaged as a distr
 - The older strongSwan/EasyVPN path is deprecated: `setup-webos-easyvpn-deprecated.sh`
   installs it, `uninstall-webos-easyvpn.sh` removes it (PiVPN-safe).
 
+## Status: ✅ TAILSCALE AGENT WORKING — second agent, in `agent-tailscale/`
+A **Tailscale (WireGuard) agent** now exists alongside the OpenVPN one, same ABI,
+same "no app patch" design. Validated end-to-end through the stock Settings VPN
+UI on a TouchPad: connect, tailnet IP, direct peer-to-peer NAT traversal, exit
+node, MagicDNS, and clean disconnect. **Read `agent-tailscale/BUILD.md` first.**
+- Backend is **tailscaled v1.78.1**, a ~23 MB **static Go** binary
+  (`CGO_ENABLED=0 GOARCH=arm GOARM=7`). Go runs fine on the 2.6.35 kernel — the
+  documented 3.2 floor is policy, not a hard break. Being static, it needs
+  **no `ssl11`/OpenSSL package at all**, unlike the OpenVPN agent.
+- Perf is a non-issue: ChaCha20-Poly1305 measured **146 Mbit/s on one core**;
+  exit-node overhead ~17% (the device's Wi-Fi is the bottleneck). RSS ~44-76 MB.
+- Architecture: the agent spawns ONE child, `scripts/tailscale-run`, which owns
+  `tailscaled` + `tailscale up` and emits `TSAGENT-STATE:` markers the agent
+  parses (same `g_io_add_watch` pattern as OpenVPN). Auth is a **pre-auth key**
+  (interactive browser login can't work here); blank field falls back to
+  `/media/internal/tailscale-authkey.txt` via `--auth-key=file:`.
+- Package: `packaging-tailscale/build-ipk.sh` → ~9 MB `.ipk`. postinst/prerm both
+  tested from a clean state. The 23 MB binary stays in the app dir on
+  `/media/cryptofs` (root fs has ~120 MB free); `/usr/lib/vpn/agents/tailscale/
+  tailscale` is a **symlink** to it (combined binary, argv[0] selects CLI mode) —
+  cryptofs refuses symlinks, `/` is ext3, hence the direction.
+- **Non-obvious traps (all cost real debugging, all documented in BUILD.md):**
+  `rp_filter` must be 2/loose or exit-node mode blackholes itself; never parse
+  tailscaled's `Switching ipn state` lines (its `NoState -> Stopped` at startup
+  precedes `up`); checkbox `value` must be the STRING `"true"` (DynamicForm does
+  `=== "true"`); answer a deferred disconnect on the runner's `disconnected`
+  marker, not child exit (the daemon unloads the plugin first, so `on_run_exit`
+  never fires); `tailscale up` needs `--timeout` or it blocks forever;
+  `tailscaled --cleanup` does NOT reliably remove the ip rules.
+
 ### (historical) EasyVPN status
 The strongSwan + vpnc EasyVPN tunnel was confirmed working earlier. Two follow-on threads
 were active before the OpenVPN client superseded this path:

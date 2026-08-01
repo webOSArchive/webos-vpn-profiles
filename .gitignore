@@ -18,3 +18,18 @@ packaging/org.webosarchive.openvpn/agent/vpn-plugin-info.json
 
 # macOS cruft
 .DS_Store
+
+# Tailscale: the ~23 MB static Go binary + its CLI copy (regenerable in ~30s;
+# see agent-tailscale/BUILD.md). The small agent .so IS tracked, as for OpenVPN.
+agent-tailscale/tailscaled
+agent-tailscale/tailscale
+
+# Built .ipk output
+packaging-tailscale/dist/
+
+# Agent payload synced into the package by build-ipk.sh (regenerable from
+# agent-tailscale/). The icon under agent/icons/ IS tracked.
+packaging-tailscale/org.webosarchive.tailscale/agent/libVpnTailscaleAgent.so
+packaging-tailscale/org.webosarchive.tailscale/agent/tailscaled
+packaging-tailscale/org.webosarchive.tailscale/agent/tailscale-run
+packaging-tailscale/org.webosarchive.tailscale/agent/vpn-plugin-info.json
