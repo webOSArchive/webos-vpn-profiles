@@ -13,7 +13,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="$HERE/org.webosarchive.tailscale"
-OUT="$HERE/dist"
+PKG="org.webosarchive.tailscale"
+# Shared output folder at the repo root (the latest .ipk of each agent is kept
+# in git there). Because it is shared, everything below is scoped to $PKG --
+# never wipe the whole directory or the other agent's package goes with it.
+OUT="$HERE/../ipks"
 
 find_palm_package() {
     if [ -n "${PALM_PACKAGE:-}" ]; then echo "$PALM_PACKAGE"; return; fi
@@ -42,12 +46,14 @@ cp "$A/scripts/tailscale-run"   "$APP/agent/"
 cp "$A/icons/tailscale-small.png" "$APP/agent/icons/"
 echo ">> synced agent payload from agent-tailscale/"
 
-rm -rf "$OUT"; mkdir -p "$OUT"
+mkdir -p "$OUT"
+# Scoped cleanup: drop only THIS package's previous build, never the folder.
+rm -f "$OUT/$PKG"_*.ipk
 
 echo ">> palm-package $APP"
 "$PALM_PACKAGE" --outdir "$OUT" "$APP"
 
-IPK="$(ls -t "$OUT"/*.ipk | head -1)"
+IPK="$(ls -t "$OUT/$PKG"_*.ipk | head -1)"
 echo ">> base package: $(basename "$IPK")"
 
 # --- inject postinst/prerm into control.tar.gz ---

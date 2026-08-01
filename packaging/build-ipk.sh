@@ -13,7 +13,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="$HERE/org.webosarchive.openvpn"
-OUT="$HERE/dist"
+PKG="org.webosarchive.openvpn"
+# Shared output folder at the repo root (the latest .ipk of each agent is kept
+# in git there). Because it is shared, everything below is scoped to $PKG --
+# never wipe the whole directory or the other agent's package goes with it.
+OUT="$HERE/../ipks"
 
 # Locate palm-package: honour $PALM_PACKAGE, else PATH, else common SDK paths.
 find_palm_package() {
@@ -42,12 +46,14 @@ cp "$A/libVpnOpenvpnAgent.so" "$A/openvpn" "$A/vpn-plugin-info.json" "$APP/agent
 cp "$A/scripts/openvpn-up" "$APP/agent/"
 echo ">> synced agent payload from agent-openvpn/"
 
-rm -rf "$OUT"; mkdir -p "$OUT"
+mkdir -p "$OUT"
+# Scoped cleanup: drop only THIS package's previous build, never the folder.
+rm -f "$OUT/$PKG"_*.ipk
 
 echo ">> palm-package $APP"
 "$PALM_PACKAGE" --outdir "$OUT" "$APP"
 
-IPK="$(ls -t "$OUT"/*.ipk | head -1)"
+IPK="$(ls -t "$OUT/$PKG"_*.ipk | head -1)"
 echo ">> base package: $(basename "$IPK")"
 
 # --- inject postinst/prerm into control.tar.gz ---

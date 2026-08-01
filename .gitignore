@@ -6,9 +6,6 @@ build-openvpn/*.tar.gz
 # and novacom get). Headers (json.h, glib_shim.h) ARE tracked.
 agent-openvpn/sysroot/usr/lib/
 
-# Built .ipk output
-packaging/dist/
-
 # Agent payload synced into the package by build-ipk.sh (regenerable from
 # agent-openvpn/). The icon under agent/icons/ IS tracked.
 packaging/org.webosarchive.openvpn/agent/libVpnOpenvpnAgent.so
@@ -24,12 +21,12 @@ packaging/org.webosarchive.openvpn/agent/vpn-plugin-info.json
 agent-tailscale/tailscaled
 agent-tailscale/tailscale
 
-# Built .ipk output
-packaging-tailscale/dist/
-
 # Agent payload synced into the package by build-ipk.sh (regenerable from
 # agent-tailscale/). The icon under agent/icons/ IS tracked.
 packaging-tailscale/org.webosarchive.tailscale/agent/libVpnTailscaleAgent.so
 packaging-tailscale/org.webosarchive.tailscale/agent/tailscaled
 packaging-tailscale/org.webosarchive.tailscale/agent/tailscale-run
 packaging-tailscale/org.webosarchive.tailscale/agent/vpn-plugin-info.json
+
+# NOTE: ipks/ is deliberately NOT ignored. Both build-ipk.sh scripts emit there
+# and the latest .ipk of each agent is kept in git for direct download.
