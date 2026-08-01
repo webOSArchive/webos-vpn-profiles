@@ -33,6 +33,7 @@
 #include <json.h>        /* Palm json-c: json_object_*  (link: -lcjson) */
 #include <glib_shim.h>   /* GLib main-loop subset  (link: -lglib-2.0)  */
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,6 +154,72 @@ static const char *field_value(struct json_object *fields, const char *id,
     if (v && json_object_is_type(v, json_type_string))
         return json_object_get_string(v);
     return dflt;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Whitespace hygiene
+ *
+ *  Everything the user types here arrives via copy/paste, and the usual route
+ *  for a 50-character tskey is "mail it to yourself and paste it in the box".
+ *  Mail clients, note apps and the webOS clipboard all cheerfully add a leading
+ *  or trailing space (or a newline from a wrapped line) that is invisible in a
+ *  one-line text field -- and `tailscale up` then rejects the key as invalid
+ *  with no hint as to why. So we scrub the input rather than blaming the user.
+ * ------------------------------------------------------------------ */
+static int is_ws(unsigned char c)
+{
+    /* Also catch NBSP (0xA0), which HTML-formatted mail loves to insert. */
+    return isspace(c) || c == 0xA0;
+}
+
+/* Copy src into dst minus leading/trailing whitespace. Returns 1 if anything
+ * was stripped. dst is always NUL-terminated. */
+static int trim_copy(char *dst, size_t dstsz, const char *src)
+{
+    if (!dstsz) return 0;
+    dst[0] = 0;
+    if (!src) return 0;
+
+    const char *b = src;
+    while (*b && is_ws((unsigned char)*b)) b++;
+    const char *e = b + strlen(b);
+    while (e > b && is_ws((unsigned char)e[-1])) e--;
+
+    size_t n = (size_t)(e - b);
+    if (n >= dstsz) n = dstsz - 1;
+    memcpy(dst, b, n);
+    dst[n] = 0;
+    return strcmp(dst, src) != 0;
+}
+
+/* Remove ALL whitespace, not just the ends. Only used on the auth key: a key is
+ * `tskey-...` -- letters, digits and hyphens -- so interior whitespace can only
+ * be paste damage (a mail client hard-wrapping the long line). Never applied to
+ * paths or URLs, where a space could be legitimate. */
+static int squeeze_ws(char *s)
+{
+    char *w = s;
+    int dropped = 0;
+    for (const char *r = s; *r; r++) {
+        if (is_ws((unsigned char)*r)) { dropped = 1; continue; }
+        *w++ = *r;
+    }
+    *w = 0;
+    return dropped;
+}
+
+/* field_value() with the ends trimmed, into a caller-supplied buffer. */
+static const char *field_value_trim(struct json_object *fields, const char *id,
+                                    const char *dflt, char *buf, size_t bufsz)
+{
+    const char *raw = field_value(fields, id, NULL);
+    if (!raw) {
+        trim_copy(buf, bufsz, dflt);
+        return buf;
+    }
+    if (trim_copy(buf, bufsz, raw))
+        agent_log("field '%s': trimmed surrounding whitespace", id);
+    return buf;
 }
 
 /* Checkboxes may come back as a real boolean, an int, or a string depending on
@@ -385,7 +452,9 @@ static void put_shell_var(FILE *f, const char *key, const char *val)
 static void effective_login_server(const char *host, struct json_object *fields,
                                    char *out, size_t outsz)
 {
-    const char *explicit_ls = field_value(fields, "tsLoginServer", "");
+    char ls[256];
+    const char *explicit_ls =
+        field_value_trim(fields, "tsLoginServer", "", ls, sizeof ls);
     out[0] = 0;
 
     if (host && *host)
@@ -406,15 +475,24 @@ static void effective_login_server(const char *host, struct json_object *fields,
  * the literal key, or a "file:<path>" reference. Returns 0 if nothing usable. */
 static int resolve_authkey(struct json_object *fields, char *out, size_t outsz)
 {
-    const char *k = field_value(fields, "tsAuthKey", "");
+    char k[512];
+    const char *raw = field_value(fields, "tsAuthKey", "");
     out[0] = 0;
 
-    if (k && *k) {
+    /* Trim before the emptiness test: a field holding only a stray space is a
+     * blank field, and should fall back to AUTHKEY_FILE like one. */
+    if (trim_copy(k, sizeof k, raw))
+        agent_log("resolve_authkey: trimmed surrounding whitespace from the key");
+
+    if (*k) {
         if (strncmp(k, "file:", 5) == 0) {          /* already a file ref */
             snprintf(out, outsz, "%s", k);
         } else if (k[0] == '/') {                   /* bare path -> file ref */
             snprintf(out, outsz, "file:%s", k);
         } else {                                    /* literal tskey-... */
+            if (squeeze_ws(k))
+                agent_log("resolve_authkey: removed whitespace from inside the "
+                          "key (pasted key was probably line-wrapped)");
             snprintf(out, outsz, "%s", k);
         }
         return 1;
@@ -434,8 +512,11 @@ static int write_config(const char *host, struct json_object *fields)
 
     char authkey[512];
     resolve_authkey(fields, authkey, sizeof authkey);
-    const char *hostname = field_value(fields, "tsHostname", default_hostname());
-    const char *exitnode = field_value(fields, "tsExitNode", "");
+    char hbuf[128], ebuf[256];
+    const char *hostname =
+        field_value_trim(fields, "tsHostname", default_hostname(), hbuf, sizeof hbuf);
+    const char *exitnode =
+        field_value_trim(fields, "tsExitNode", "", ebuf, sizeof ebuf);
     int accept_routes    = field_bool(fields, "tsAcceptRoutes", 1);
     int accept_dns       = field_bool(fields, "tsAcceptDns", 1);
 

@@ -133,3 +133,10 @@ Device log: `/var/log/webos-tailscale-agent.log` (mode 0600; carries both
   5210/5230/5250/5270 and flush table 52 by hand, or a disconnect leaves the
   device blackholing traffic.
 - **`rp_filter` must be 2 (loose)** for exit-node mode; webOS ships strict (1).
+- **Scrub whitespace out of pasted text fields.** The usual way a key reaches the
+  device is "mail it to yourself and paste it", and mail clients add a leading or
+  trailing space — or a hard wrap mid-key — that is invisible in a one-line field.
+  `tailscale up` then rejects it as an invalid key with no hint why. `trim_copy()`
+  trims the ends of every text field; `squeeze_ws()` additionally removes interior
+  whitespace from a literal `tskey-…` (never from a path, where a space can be
+  real). `tailscale-run` repeats the end-trim for hand-written conf files.

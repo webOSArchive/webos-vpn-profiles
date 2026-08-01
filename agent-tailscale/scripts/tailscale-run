@@ -61,6 +61,19 @@ say() { echo "$*"; log "$*"; }          # goes to the agent's pipe AND the log
 
 [ -f "$CONF" ] && . "$CONF"
 
+# Defence in depth: the agent already scrubs whitespace off a pasted auth key
+# (mail clients love to add a leading/trailing space that is invisible in the
+# text field, and `tailscale up` then just says the key is invalid). A conf file
+# written by hand during development can still carry one, so trim here too.
+# Only the ends are trimmed, so a space inside a "file:" path still works.
+while :; do
+    case "$TS_AUTHKEY" in
+        " "*|"	"*)  TS_AUTHKEY=${TS_AUTHKEY#?} ;;
+        *" "|*"	")   TS_AUTHKEY=${TS_AUTHKEY%?} ;;
+        *)           break ;;
+    esac
+done
+
 # ---------------------------------------------------------------- rp_filter --
 # CRITICAL: webOS ships rp_filter=1 (strict) on every interface. In exit-node
 # mode table 52 holds `default dev tailscale0`, so the RETURN path for

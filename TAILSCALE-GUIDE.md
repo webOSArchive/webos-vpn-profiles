@@ -124,7 +124,7 @@ for how to build the Tailscale binary itself.
 |---|---|
 | **Connection Type** | Tailscale |
 | **VPN Server** | anything, e.g. `tailscale` |
-| **Auth key** | your `tskey-auth-…`, or leave blank to use the file from Part 2 |
+| **Auth key** | your `tskey-auth-…`, or leave blank to use the file from Part 2. Paste freely — any spaces or line breaks the mail app added around the key are stripped automatically |
 | **Device name** | defaults to the TouchPad's hostname; this is how it appears in your tailnet |
 | **Login server** | blank for Tailscale; your server's URL for Headscale |
 | **Exit node** | blank for a split tunnel (see below) |
@@ -164,7 +164,7 @@ agent's lines and the connection script's.
 
 | Symptom | Cause / fix |
 |---|---|
-| "Auth key missing, expired, or already used" | Non-reusable keys are single-use, and keys expire (90 days max). Generate a new one. |
+| "Auth key missing, expired, or already used" | Non-reusable keys are single-use, and keys expire (90 days max). Generate a new one. (Stray spaces or line breaks around a pasted key are *not* the cause — the agent strips those for you.) |
 | Connects, but private hostnames don't resolve | Tick **Use Tailscale DNS**. That points the device's resolver at Tailscale, so lookups follow the tunnel. |
 | Connects, but can't reach a LAN behind a subnet router | Tick **Accept subnet routes**, and make sure the route is approved in the admin console. |
 | Exit node selected and everything stops working | Reverse-path filtering. The agent sets it to loose mode automatically; if you've hardened `rp_filter` yourself, that's the culprit. |
