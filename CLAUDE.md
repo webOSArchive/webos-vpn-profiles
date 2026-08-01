@@ -44,7 +44,11 @@ node, MagicDNS, and clean disconnect. **Read `agent-tailscale/BUILD.md` first.**
   `=== "true"`); answer a deferred disconnect on the runner's `disconnected`
   marker, not child exit (the daemon unloads the plugin first, so `on_run_exit`
   never fires); `tailscale up` needs `--timeout` or it blocks forever;
-  `tailscaled --cleanup` does NOT reliably remove the ip rules.
+  `tailscaled --cleanup` does NOT reliably remove the ip rules; **pasted text
+  fields must be whitespace-scrubbed** — a mail client's leading/trailing space
+  around an auth key is invisible in the field and `tailscale up` just says
+  "invalid key" (agent trims all text fields, and strips interior whitespace
+  from a literal `tskey-…` for keys wrapped across lines; confirmed on-device).
 
 ### (historical) EasyVPN status
 The strongSwan + vpnc EasyVPN tunnel was confirmed working earlier. Two follow-on threads
