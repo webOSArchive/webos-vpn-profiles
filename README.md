@@ -16,6 +16,10 @@ just teaches the OS a new protocol.
 > [PiVPN](https://pivpn.io): full-tunnel routing **and DNS** go through the tunnel,
 > and your normal DNS is restored on disconnect.
 
+> **Also here: a [Tailscale agent](TAILSCALE-GUIDE.md).** Same plugin model, same
+> stock UI, but no server to run, no port-forward, and no extra packages on the
+> device — plus NAT traversal and exit nodes.
+
 ---
 
 ## Why
@@ -109,6 +113,9 @@ hand-off — it's all in [`agent-openvpn/BUILD.md`](agent-openvpn/BUILD.md).
 | [`packaging/`](packaging/) | Builds the distributable `.ipk` (`build-ipk.sh`) — a small info app that bundles the agent + `postinst`/`prerm` that install it as root. |
 | [`PIVPN-GUIDE.md`](PIVPN-GUIDE.md) | End-to-end guide: PiVPN server + TouchPad client + troubleshooting. |
 | [`agent-openvpn/BUILD.md`](agent-openvpn/BUILD.md) | Build + architecture + the full recovered agent ABI. |
+| [`agent-tailscale/`](agent-tailscale/) | A **second agent**, same plugin model, driving Tailscale (WireGuard). See [`TAILSCALE-GUIDE.md`](TAILSCALE-GUIDE.md). |
+| [`packaging-tailscale/`](packaging-tailscale/) | Builds the Tailscale `.ipk`, same shape as `packaging/`. |
+| [`ipks/`](ipks/) | The latest built `.ipk` for each agent, kept in git so you can install without building. |
 | `com.palm.app.vpn/` | The stock webOS VPN front-end (pulled off the device) — the rendering contract the agent targets. |
 | `reversing/` | The stock `libVpncAgent.so` / `PmVpnDaemon` + disassembly used to recover the ABI. |
 | `setup-webos-easyvpn-deprecated.sh` | The **older** IKEv1/EasyVPN server installer (see below). |
